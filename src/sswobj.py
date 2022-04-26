@@ -251,3 +251,86 @@ class Alignment(object):
                 rpt += "%s%s\n" % (left_margin.ljust(margin_width), line)
             rpt += '\n'
         return rpt
+    
+    def get_aligned_pairs(self):
+        """
+        a list of aligned read (query) and reference positions
+
+        Returns:
+        --------
+        reference positions, list
+        read(query) positions, list
+        cigar, including S,X,M,I,D, list
+        """
+        r_list = []  # reference positions
+        q_list = []  # query positions
+        cigar_list = []
+        pairs_len = 0
+        r_index = 0
+        q_index = 0
+        q_index2 = 0
+        left_softclip_len = self.query_begin
+
+        r_list += [None] * left_softclip_len
+        q_list += list(range(left_softclip_len))
+        cigar_list += ["S"] * left_softclip_len
+        # pairs_len += left_softclip_len
+        q_index2 += left_softclip_len
+
+        r_seq = self.reference[self.reference_begin : self.reference_end + 1]
+        q_seq = self.query[self.query_begin : self.query_end + 1]
+        # r_line = m_line = q_line = ""
+        match_flag = lambda rq: "=" if self.matrix.test_match(*rq) else "X"
+        for (op_len, op_char) in self.iter_cigar:
+            # self.iter_cigar 不包含 Softclip
+            op_len = int(op_len)
+            print(op_len, op_char)
+            if op_char.upper() == "M":
+                # match between reference and query
+                ref_chunk = r_seq[r_index : r_index + op_len]
+                query_chunk = q_seq[q_index : q_index + op_len]
+                # r_line += ref_chunk
+                # q_line += query_chunk
+                cigar_str = str.join("", map(match_flag, zip(ref_chunk, query_chunk)))
+                # m_line += match_seq
+
+                r_list += list(range(r_index, r_index + op_len))
+                q_list += list(range(q_index2, q_index2 + op_len))
+                cigar_list += list(cigar_str)
+
+                q_index2 += op_len
+                r_index += op_len
+                q_index += op_len
+
+            elif op_char.upper() == "I":
+                # insertion into reference
+
+                r_list += [None] * op_len
+                q_list += list(range(q_index2, q_index2 + op_len))
+                cigar_list += ["I"] * op_len
+                q_index2 += op_len
+
+                q_index += op_len
+
+            elif op_char.upper() == "D":
+                # deletion from reference
+                # r_line += r_seq[r_index : r_index + op_len]
+                # m_line += " " * op_len
+                # q_line += "-" * op_len
+                # #  only ref index change
+
+                r_list += list(range(r_index, r_index + op_len))
+                q_list += [None] * op_len
+                cigar_list += ["D"] * op_len
+
+                r_index += op_len
+
+        # process  right softclip
+        right_softclip_len = len(self.query) - self.query_end - 1
+        r_list += [None] * right_softclip_len
+        q_list += list(range(q_index2, q_index2 + right_softclip_len))
+        cigar_list += ["S"] * right_softclip_len
+        print("right_softclip_len", right_softclip_len)
+        if len(r_list) == len(q_list) == len(cigar_list):
+            return (r_list, q_list, cigar_list)
+        raise ValueError('The length of r_list, q_list, cigar_list should be equal')
