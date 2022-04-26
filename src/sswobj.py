@@ -331,6 +331,7 @@ class Alignment(object):
         cigar_list = []
         pairs_len = 0
         r_index = 0
+        r_index2 = self.reference_begin
         q_index = 0
         q_index2 = 0
         left_softclip_len = self.query_begin
@@ -341,28 +342,30 @@ class Alignment(object):
         # pairs_len += left_softclip_len
         q_index2 += left_softclip_len
 
-        r_seq = self.reference[self.reference_begin: self.reference_end + 1]
-        q_seq = self.query[self.query_begin: self.query_end + 1]
+        r_seq = self.reference[self.reference_begin : self.reference_end + 1]
+        q_seq = self.query[self.query_begin : self.query_end + 1]
         # r_line = m_line = q_line = ""
-        def match_flag(rq): return "=" if self.matrix.test_match(*rq) else "X"
+        def match_flag(rq):
+            return "=" if self.matrix.test_match(*rq) else "X"
+
         for (op_len, op_char) in self.iter_cigar:
             # self.iter_cigar 不包含 Softclip
             op_len = int(op_len)
             if op_char.upper() == "M":
                 # match between reference and query
-                ref_chunk = r_seq[r_index: r_index + op_len]
-                query_chunk = q_seq[q_index: q_index + op_len]
+                ref_chunk = r_seq[r_index : r_index + op_len]
+                query_chunk = q_seq[q_index : q_index + op_len]
                 # r_line += ref_chunk
                 # q_line += query_chunk
-                cigar_str = str.join(
-                    "", map(match_flag, zip(ref_chunk, query_chunk)))
+                cigar_str = str.join("", map(match_flag, zip(ref_chunk, query_chunk)))
                 # m_line += match_seq
 
-                r_list += list(range(r_index, r_index + op_len))
+                r_list += list(range(r_index2, r_index2 + op_len))
                 q_list += list(range(q_index2, q_index2 + op_len))
                 cigar_list += list(cigar_str)
 
                 q_index2 += op_len
+                r_index2 += op_len
                 r_index += op_len
                 q_index += op_len
 
@@ -383,11 +386,12 @@ class Alignment(object):
                 # q_line += "-" * op_len
                 # #  only ref index change
 
-                r_list += list(range(r_index, r_index + op_len))
+                r_list += list(range(r_index2, r_index2 + op_len))
                 q_list += [None] * op_len
                 cigar_list += ["D"] * op_len
 
                 r_index += op_len
+                r_index2 += op_len
 
         # process  right softclip
         right_softclip_len = len(self.query) - self.query_end - 1
@@ -396,5 +400,4 @@ class Alignment(object):
         cigar_list += ["S"] * right_softclip_len
         if len(r_list) == len(q_list) == len(cigar_list):
             return (r_list, q_list, cigar_list)
-        raise ValueError(
-            'The length of r_list, q_list, cigar_list should be equal')
+        raise ValueError("The length of r_list, q_list, cigar_list should be equal")
