@@ -5,6 +5,7 @@ from . import iupac
 
 __all__ = ["ScoreMatrix", "NucleotideScoreMatrix", "Aligner", "Alignment"]
 
+
 class ScoreMatrix(object):
     def __init__(self, alphabet=None, match=2, mismatch=-2):
         self._match = match
@@ -19,23 +20,28 @@ class ScoreMatrix(object):
         (self._match, self._mismatch, self.alphabet) = state
 
     def __eq__(self, other):
-        return \
-            (self._match == other._match) and \
-            (self._mismatch == other._mismatch) and \
-            (self._alphabet == other._alphabet)
+        return (
+            (self._match == other._match)
+            and (self._mismatch == other._mismatch)
+            and (self._alphabet == other._alphabet)
+        )
 
     def get_mismatch(self):
         return self._mismatch
+
     def set_mismatch(self, val):
         self._mismatch = val
         self._init_matrix()
+
     mismatch = property(get_mismatch, set_mismatch)
 
     def get_match(self):
         return self._match
+
     def set_match(self, val):
         self._match = val
         self._init_matrix()
+
     match = property(get_match, set_match)
 
     def get_alphabet(self):
@@ -43,8 +49,11 @@ class ScoreMatrix(object):
 
     def set_alphabet(self, alphabet):
         self._alphabet = tuple(alphabet) if alphabet else tuple()
-        self.symbol_map = {symbol.upper(): idx for (idx, symbol) in enumerate(self._alphabet)}
+        self.symbol_map = {
+            symbol.upper(): idx for (idx, symbol) in enumerate(self._alphabet)
+        }
         self._init_matrix()
+
     alphabet = property(get_alphabet, set_alphabet)
 
     def _init_matrix(self):
@@ -57,7 +66,7 @@ class ScoreMatrix(object):
                 yield self._get_score(row_symbol, col_symbol)
 
     def _get_score(self, symbol_1, symbol_2):
-        return (self.match if self.test_match(symbol_1, symbol_2) else self.mismatch)
+        return self.match if self.test_match(symbol_1, symbol_2) else self.mismatch
 
     def test_match(self, symbol_1, symbol_2):
         return symbol_1.upper() == symbol_2.upper()
@@ -69,6 +78,7 @@ class ScoreMatrix(object):
         for (idx, symbol) in enumerate(seq):
             _seq_instance[idx] = self.symbol_map[symbol]
         return _seq_instance
+
 
 class NucleotideScoreMatrix(ScoreMatrix):
     def __init__(self, alphabet=None, **kw):
@@ -82,11 +92,14 @@ class NucleotideScoreMatrix(ScoreMatrix):
             return True
         if _sym_1 in iupac.NucleotideTable:
             matches = iupac.NucleotideTable[_sym_1]["matches"]
-            return (_sym_2 in matches)
+            return _sym_2 in matches
         return super(NucleotideScoreMatrix, self).test_match(symbol_1, symbol_2)
 
+
 class Aligner(object):
-    def __init__(self, reference=None, matrix=None, molecule="dna", gap_open=3, gap_extend=1):
+    def __init__(
+        self, reference=None, matrix=None, molecule="dna", gap_open=3, gap_extend=1
+    ):
         self.reference = reference
         self.matrix = matrix
         self.molecule = molecule
@@ -100,37 +113,69 @@ class Aligner(object):
         if self.gap_open <= self.gap_extend:
             raise ValueError("gap_open must always be greater than gap_extend")
 
-    def align(self, query='', reference=None, revcomp=True):
+    def align(self, query="", reference=None, revcomp=True):
         # XXX: I really don't find this part of SSW useful, which
-        # is why i broke alignment into two stages, so you can use 
+        # is why i broke alignment into two stages, so you can use
         # the low level interface if you wish.
         filter_score = 0
         filter_distance = 0
         flags = 1
         mask_length = max(15, len(query) // 2)
         reference = reference if reference != None else self.reference
-        res = self._align(query, reference, flags, filter_score, filter_distance, mask_length)
+        res = self._align(
+            query, reference, flags, filter_score, filter_distance, mask_length, strand='+'
+        )
         if revcomp:
             query_rc = iupac.nucleotide_reverse_complement(query)
-            res_rc = self._align(query_rc, reference, flags, filter_score, filter_distance, mask_length)
+            res_rc = self._align(
+                query_rc, reference, flags, filter_score, filter_distance, mask_length, strand='-'
+            )
             if res_rc.score > res.score:
                 res = res_rc
         return res
-    
-    def _align(self, query, reference, flags, filter_score, filter_distance, mask_length, score_size=2): 
+
+    def _align(
+        self,
+        query,
+        reference,
+        flags,
+        filter_score,
+        filter_distance,
+        mask_length,
+        strand='+',
+        score_size=2,
+    ):
         _query = self.matrix.convert_sequence_to_ints(query)
         _reference = self.matrix.convert_sequence_to_ints(reference)
-        profile = libssw.ssw_profile_init(_query, len(query), self.matrix._matrix, len(self.matrix.alphabet), score_size)
+        profile = libssw.ssw_profile_init(
+            _query,
+            len(query),
+            self.matrix._matrix,
+            len(self.matrix.alphabet),
+            score_size,
+        )
         if self.gap_open <= self.gap_extend:
             raise ValueError("gap_open must always be greater than gap_extend")
-        alignment = libssw.ssw_align_init(profile, _reference, len(_reference), self.gap_open, self.gap_extend, flags, filter_score, filter_distance, mask_length) 
-        alignment_instance = Alignment(alignment, query, reference, self.matrix)
+        alignment = libssw.ssw_align_init(
+            profile,
+            _reference,
+            len(_reference),
+            self.gap_open,
+            self.gap_extend,
+            flags,
+            filter_score,
+            filter_distance,
+            mask_length
+        )
+        alignment_instance = Alignment(
+            alignment, query, reference, self.matrix, strand=strand)
         libssw.ssw_profile_del(profile)
         libssw.ssw_align_del(alignment)
         return alignment_instance
 
+
 class Alignment(object):
-    def __init__ (self, alignment, query, reference, matrix=None):
+    def __init__(self, alignment, query, reference, matrix=None, strand=''):
         self.score = alignment.contents.score
         self.score2 = alignment.contents.score2
         self.reference = reference
@@ -139,10 +184,16 @@ class Alignment(object):
         self.query = query
         self.query_begin = alignment.contents.query_begin
         self.query_end = alignment.contents.query_end
-        self.query_coverage = (self.query_end - self.query_begin + 1) / len(self.query)
-        self.reference_coverage = (self.reference_end - self.reference_begin + 1) / len(self.reference)
+        self.query_coverage = (
+            self.query_end - self.query_begin + 1) / len(self.query)
+        self.reference_coverage = (self.reference_end - self.reference_begin + 1) / len(
+            self.reference
+        )
         self.matrix = matrix
-        self._cigar_string = [alignment.contents.cigar[idx] for idx in range(alignment.contents.cigarLen)]
+        self._cigar_string = [
+            alignment.contents.cigar[idx] for idx in range(alignment.contents.cigarLen)
+        ]
+        self.strand = strand
 
     @property
     def iter_cigar(self):
@@ -156,7 +207,9 @@ class Alignment(object):
         cigar = ""
         if self.query_begin > 0:
             cigar += str(self.query_begin) + "S"
-        cigar += str.join('', (str.join('', map(str, cstr)) for cstr in self.iter_cigar))
+        cigar += str.join(
+            "", (str.join("", map(str, cstr)) for cstr in self.iter_cigar)
+        )
         end_len = len(self.query) - self.query_end - 1
         if end_len != 0:
             cigar += str(end_len) + "S"
@@ -168,32 +221,33 @@ class Alignment(object):
         q_index = 0
         r_seq = self.reference[self.reference_begin: self.reference_end + 1]
         q_seq = self.query[self.query_begin: self.query_end + 1]
-        r_line = m_line = q_line = ''
-        match_flag = lambda rq: '|' if self.matrix.test_match(*rq) else '*'
+        r_line = m_line = q_line = ""
+        def match_flag(rq): return "|" if self.matrix.test_match(*rq) else "*"
         for (op_len, op_char) in self.iter_cigar:
             op_len = int(op_len)
-            if op_char.upper() == 'M':
+            if op_char.upper() == "M":
                 # match between reference and query
                 ref_chunk = r_seq[r_index: r_index + op_len]
                 query_chunk = q_seq[q_index: q_index + op_len]
                 r_line += ref_chunk
                 q_line += query_chunk
-                match_seq = str.join('', map(match_flag, zip(ref_chunk, query_chunk)))
+                match_seq = str.join(
+                    "", map(match_flag, zip(ref_chunk, query_chunk)))
                 m_line += match_seq
                 r_index += op_len
                 q_index += op_len
-            elif op_char.upper() == 'I':
+            elif op_char.upper() == "I":
                 # insertion into reference
-                r_line += '-' * op_len
-                m_line += ' ' * op_len
+                r_line += "-" * op_len
+                m_line += " " * op_len
                 q_line += q_seq[q_index: q_index + op_len]
                 #  only query index change
                 q_index += op_len
-            elif op_char.upper() == 'D':
+            elif op_char.upper() == "D":
                 # deletion from reference
                 r_line += r_seq[r_index: r_index + op_len]
-                m_line += ' ' * op_len
-                q_line += '-' * op_len
+                m_line += " " * op_len
+                q_line += "-" * op_len
                 #  only ref index change
                 r_index += op_len
         return (r_line, m_line, q_line)
@@ -202,17 +256,17 @@ class Alignment(object):
 
     @property
     def match_count(self):
-        return self.alignment[1].count('|')
+        return self.alignment[1].count("|")
 
     @property
     def mismatch_count(self):
-        return self.alignment[1].count('*')
+        return self.alignment[1].count("*")
 
     @property
     def insertion_count(self):
         cnt = 0
         for (op_len, op_char) in self.iter_cigar:
-            if op_char.upper() == 'I':
+            if op_char.upper() == "I":
                 cnt += op_len
         return cnt
 
@@ -220,7 +274,7 @@ class Alignment(object):
     def deletion_count(self):
         cnt = 0
         for (op_len, op_char) in self.iter_cigar:
-            if op_char.upper() == 'D':
+            if op_char.upper() == "D":
                 cnt += op_len
         return cnt
 
@@ -230,28 +284,38 @@ class Alignment(object):
             while 1:
                 res = []
                 for line in lines:
-                    res.append(line[idx:idx+width])
+                    res.append(line[idx: idx + width])
                 if not any(res):
                     break
                 yield (res, idx)
                 idx += width
 
         margin_width = len(str(max(self.query_end, self.reference_end))) + 8
-        rpt = ''
+        rpt = ""
         if header:
-            rpt += "Score = %s, Matches = %s, Mismatches = %s, Insertions = %s, Deletions = %s\n" % (self.score, self.match_count, self.mismatch_count, self.insertion_count, self.deletion_count)
-            rpt += '\n'
+            rpt += "Score = %s, Matches = %s, Mismatches = %s, Insertions = %s, Deletions = %s\n" % (
+                self.score,
+                self.match_count,
+                self.mismatch_count,
+                self.insertion_count,
+                self.deletion_count,
+            )
+            rpt += "\n"
         for (lines, offset) in window(self.alignment, width - margin_width):
-            for (name, seq_offset, line) in zip(["ref", "", "query"], [self.reference_begin, None, self.query_begin], lines):
+            for (name, seq_offset, line) in zip(
+                ["ref", "", "query"],
+                [self.reference_begin, None, self.query_begin],
+                lines,
+            ):
                 if name:
                     line_offset = seq_offset + offset + 1
                     left_margin = "%s %s" % (name.ljust(5), line_offset)
                 else:
                     left_margin = ""
                 rpt += "%s%s\n" % (left_margin.ljust(margin_width), line)
-            rpt += '\n'
+            rpt += "\n"
         return rpt
-    
+
     def get_aligned_pairs(self):
         """
         a list of aligned read (query) and reference positions
@@ -277,21 +341,21 @@ class Alignment(object):
         # pairs_len += left_softclip_len
         q_index2 += left_softclip_len
 
-        r_seq = self.reference[self.reference_begin : self.reference_end + 1]
-        q_seq = self.query[self.query_begin : self.query_end + 1]
+        r_seq = self.reference[self.reference_begin: self.reference_end + 1]
+        q_seq = self.query[self.query_begin: self.query_end + 1]
         # r_line = m_line = q_line = ""
-        match_flag = lambda rq: "=" if self.matrix.test_match(*rq) else "X"
+        def match_flag(rq): return "=" if self.matrix.test_match(*rq) else "X"
         for (op_len, op_char) in self.iter_cigar:
             # self.iter_cigar 不包含 Softclip
             op_len = int(op_len)
-            print(op_len, op_char)
             if op_char.upper() == "M":
                 # match between reference and query
-                ref_chunk = r_seq[r_index : r_index + op_len]
-                query_chunk = q_seq[q_index : q_index + op_len]
+                ref_chunk = r_seq[r_index: r_index + op_len]
+                query_chunk = q_seq[q_index: q_index + op_len]
                 # r_line += ref_chunk
                 # q_line += query_chunk
-                cigar_str = str.join("", map(match_flag, zip(ref_chunk, query_chunk)))
+                cigar_str = str.join(
+                    "", map(match_flag, zip(ref_chunk, query_chunk)))
                 # m_line += match_seq
 
                 r_list += list(range(r_index, r_index + op_len))
@@ -330,7 +394,7 @@ class Alignment(object):
         r_list += [None] * right_softclip_len
         q_list += list(range(q_index2, q_index2 + right_softclip_len))
         cigar_list += ["S"] * right_softclip_len
-        print("right_softclip_len", right_softclip_len)
         if len(r_list) == len(q_list) == len(cigar_list):
             return (r_list, q_list, cigar_list)
-        raise ValueError('The length of r_list, q_list, cigar_list should be equal')
+        raise ValueError(
+            'The length of r_list, q_list, cigar_list should be equal')
